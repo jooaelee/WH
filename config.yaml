@@ -24,8 +24,10 @@ cv2_cut: 0.49
 continuous_recent_activity: 0.40         # 지속형 must be active in >=40% of recent weeks
 recent_window_weeks: 52
 
-# ---- large vs small shipment split (relative, per series) -------------------
-large_quantile: 0.80                     # weekly qty >= p80 of own history = 대량
+# ---- large vs small shipment split ------------------------------------------
+split_mode: channel                      # "channel" (특송=소량) | "quantile"
+express_channels: [DHL, FEDEX, UPS]       # 특송 = 소량; 나머지 채널 = 대량
+large_quantile: 0.80                     # used only when split_mode: quantile
 
 # ---- backtest & tuning ------------------------------------------------------
 backtest_folds: 6

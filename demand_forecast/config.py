@@ -47,9 +47,16 @@ class Config:
     recent_window_weeks: int = 52
 
     # --------------------------------------------------------------- large/small
-    # Relative per-series threshold: a weekly shipment is "대량 (large)" if it is
-    # at/above this quantile of the series' own non-zero weekly history.
-    large_quantile: float = 0.80
+    # How to split 대량(large) vs 소량(small) shipments:
+    #   "channel"  -> by outbound channel: express couriers (DHL/FedEx/UPS) are
+    #                 소량(small parcels); every other channel (freight, pickup)
+    #                 is 대량(large). Operational default — express is ~0.3% of
+    #                 volume but ~37% of orders, clearly the small-parcel stream.
+    #   "quantile" -> relative per-series magnitude: a weekly shipment is 대량 if
+    #                 at/above ``large_quantile`` of that series' own history.
+    split_mode: str = "channel"
+    express_channels: tuple = ("DHL", "FEDEX", "UPS")  # 특송 = 소량
+    large_quantile: float = 0.80  # used only when split_mode == "quantile"
 
     # ---------------------------------------------------------------- backtesting
     backtest_folds: int = 6         # rolling-origin folds

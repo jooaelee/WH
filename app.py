@@ -47,8 +47,21 @@ as_of = st.sidebar.text_input("기준일 as-of (YYYY-MM-DD, 비우면 데이터 
 horizon = st.sidebar.slider("예측 구간 (주)", 1, 12, 4)
 vol_q = st.sidebar.slider("예측 대상 물량 컷 (상위 %)", 5, 50, 20,
                           help="상위 N% 물량 SKU·고객만 예측") / 100.0
-large_q = st.sidebar.slider("대량 출고 임계 (퍼센타일)", 50, 95, 80,
-                            help="각 대상의 비영 주간 출고량이 이 퍼센타일 이상이면 '대량'") / 100.0
+
+st.sidebar.markdown("**대량 / 소량 정의**")
+split_mode = st.sidebar.radio(
+    "구분 기준", ["채널 (특송=소량)", "물량 퍼센타일"], index=0,
+    help="특송(DHL/FedEx/UPS)은 소량, 나머지 채널은 대량으로 봅니다.")
+if split_mode.startswith("채널"):
+    split_mode_val = "channel"
+    express_str = st.sidebar.text_input("특송(소량) 채널", value="DHL, FEDEX, UPS")
+    express_channels = tuple(c.strip() for c in express_str.split(",") if c.strip())
+    large_q = 0.80
+else:
+    split_mode_val = "quantile"
+    express_channels = ("DHL", "FEDEX", "UPS")
+    large_q = st.sidebar.slider("대량 출고 임계 (퍼센타일)", 50, 95, 80,
+                                help="각 대상의 비영 주간 출고량이 이 퍼센타일 이상이면 '대량'") / 100.0
 max_trials = st.sidebar.slider("모델 탐색 횟수 (시계열당)", 3, 10, 10)
 folds = st.sidebar.slider("백테스트 폴드 수", 3, 12, 6)
 keep_state = st.sidebar.checkbox("이전 실행 상태 유지 (고도화)", value=True,
@@ -90,7 +103,9 @@ def execute():
     cfg = Config(
         inbound_path=in_path, outbound_path=out_path, inventory_path=inv_path,
         as_of=as_of.strip() or None, horizon_weeks=horizon,
-        target_volume_quantile=1.0 - vol_q, large_quantile=large_q,
+        target_volume_quantile=1.0 - vol_q,
+        split_mode=split_mode_val, express_channels=express_channels,
+        large_quantile=large_q,
         max_trials=max_trials, backtest_folds=folds,
         output_dir=str(out_dir), registry_path=str(registry_path),
         report_html=str(out_dir / "report.html"),

@@ -70,11 +70,25 @@ def run(cfg: Config, base_dir: str = ".") -> RunResult:
     classes_frames = []
     n_target_total = 0
 
+    # Channel split for the 대량/소량 definition: express couriers (DHL/FedEx/UPS)
+    # are 소량; all other channels are 대량. Pre-split once, reuse per grain.
+    demand_bulk = demand_express = None
+    if cfg.split_mode == "channel":
+        express_set = {c.upper() for c in cfg.express_channels}
+        is_exp = wh.outbound["channel"].astype(str).str.upper().isin(express_set)
+        demand_bulk = wh.outbound[~is_exp]
+        demand_express = wh.outbound[is_exp]
+
     for grain, keys in GRAINS.items():
         series = {k: v for k, v in
                   data_loader.weekly_series(wh.outbound, keys, wh.week_index)}
         if not series:
             continue
+        if cfg.split_mode == "channel":
+            series_bulk = dict(data_loader.weekly_series(demand_bulk, keys, wh.week_index))
+            series_express = dict(data_loader.weekly_series(demand_express, keys, wh.week_index))
+        else:
+            series_bulk = series_express = {}
         desc = classify_series(series, wh.week_index, cfg)
         desc = select_targets(desc, cfg)
         # The top-20% volume cut is specified for SKU/customer. Channels are few
@@ -92,8 +106,11 @@ def run(cfg: Config, base_dir: str = ".") -> RunResult:
             sid = _series_id(grain, key)
             champ = registry.champion(sid)
             outcome = tune_series(y, row["label"], cfg, champion=champ)
+            bulk_y = series_bulk.get(key) if cfg.split_mode == "channel" else None
+            express_y = series_express.get(key) if cfg.split_mode == "channel" else None
             sf = forecast_series(y, outcome.model_name, outcome.params, cfg,
-                                 week_index=wh.week_index)
+                                 week_index=wh.week_index,
+                                 bulk_y=bulk_y, express_y=express_y)
             registry.update(sid, grain, row["label"], outcome.model_name,
                             outcome.params, outcome.score, run_date)
             improvement = registry.improvement(sid)
@@ -112,6 +129,7 @@ def run(cfg: Config, base_dir: str = ".") -> RunResult:
                 "p_occurrence_week": sf.p_occurrence,
                 "routine_weekly": sf.routine_weekly,
                 "routine_total_4w": sf.routine_total,
+                "bulk_share": sf.bulk_share,
             })
             for i, wk in enumerate(future_weeks):
                 fc_row[f"w{i+1}_{wk.date()}"] = sf.weekly[i]
@@ -123,6 +141,7 @@ def run(cfg: Config, base_dir: str = ".") -> RunResult:
                 "p_large_week": sf.p_large_week,
                 "p_large_4w": sf.p_large_horizon,
                 "expected_large_size": sf.expected_large_size,
+                "bulk_share": sf.bulk_share,
                 "last_large_week": (str(sf.last_large_week.date())
                                     if sf.last_large_week is not None else None),
             })
@@ -160,6 +179,14 @@ def run(cfg: Config, base_dir: str = ".") -> RunResult:
     prev_runs = registry.data.get("runs", [])
     prev_median = prev_runs[-1].get("median_rmsse") if prev_runs else None
 
+    # Express (소량) vs bulk (대량) volume/order shares, for report transparency.
+    express_vol_share = express_cnt_share = None
+    if cfg.split_mode == "channel" and demand_express is not None:
+        tot = float(wh.outbound["qty"].sum())
+        express_vol_share = float(demand_express["qty"].sum() / tot) if tot else 0.0
+        express_cnt_share = (float(len(demand_express) / len(wh.outbound))
+                             if len(wh.outbound) else 0.0)
+
     summary = {
         "n_targets": int(n_target_total),
         "n_sku_targets": int((forecasts["grain"] == "sku").sum()) if not forecasts.empty else 0,
@@ -175,7 +202,11 @@ def run(cfg: Config, base_dir: str = ".") -> RunResult:
 
     meta = {"as_of": run_date, "data_start": str(wh.week_index[0].date()),
             "n_weeks": len(wh.week_index), "future_weeks": summary["future_weeks"],
-            "prev_median_rmsse": prev_median, **summary}
+            "prev_median_rmsse": prev_median,
+            "split_mode": cfg.split_mode,
+            "express_channels": list(cfg.express_channels),
+            "express_vol_share": express_vol_share,
+            "express_cnt_share": express_cnt_share, **summary}
 
     result = RunResult(forecasts, large_prob, small, classes, meta)
     report_mod.write_outputs(result, cfg)

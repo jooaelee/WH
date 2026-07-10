@@ -125,6 +125,12 @@ def _large_table(df, key_col, key_label, title, note, top=15):
     if sub.empty:
         return ""
     sub = sub.sort_values("p_large_4w", ascending=False).head(top)
+    # In channel mode a pure-express channel has no 대량 events; drop those rows
+    # from the channel breakdown so only 비특송(대량) channels are listed.
+    if key_col == "channel" and "bulk_share" in sub.columns:
+        sub = sub[sub["bulk_share"] > 0]
+        if sub.empty:
+            return ""
     rows = []
     for _, r in sub.iterrows():
         name = r.get(key_col if key_col != "sku" else "item_code",
@@ -133,8 +139,8 @@ def _large_table(df, key_col, key_label, title, note, top=15):
             f'<tr><td class="key">{_esc(name)}</td>'
             f'<td>{_prob_bar(r["p_large_4w"])}</td>'
             f'<td class="num">{_pct(r["p_large_week"])}</td>'
-            f'<td class="num">{_int(r["large_threshold"])}</td>'
             f'<td class="num">{_int(r["expected_large_size"])}</td>'
+            f'<td class="num">{_pct(r.get("bulk_share"))}</td>'
             f'<td class="num muted">{_esc(r.get("last_large_week") or "-")}</td></tr>')
     return f"""
     <div class="card">
@@ -143,7 +149,7 @@ def _large_table(df, key_col, key_label, title, note, top=15):
       <div class="scroll"><table>
         <thead><tr>
           <th>{_esc(key_label)}</th><th>4주내 대량출고 확률</th><th class="num">주간확률</th>
-          <th class="num">대량 임계(EA)</th><th class="num">예상 대량규모</th><th class="num">최근 대량주</th>
+          <th class="num">예상 대량규모(EA)</th><th class="num">비특송 비중</th><th class="num">최근 대량주</th>
         </tr></thead><tbody>{''.join(rows)}</tbody></table></div>
     </div>"""
 
@@ -162,14 +168,22 @@ def _small_table(df, meta, top=20):
             f'<td class="num muted">{_int(r["forecast_total_4w"])}</td>'
             f'<td class="num">{_pct(r["p_occurrence_week"])}</td>'
             f'<td class="num">{_num(r["rmsse"])}</td></tr>')
+    channel_mode = meta.get("split_mode") == "channel"
+    if channel_mode:
+        exp = " · ".join(meta.get("express_channels", []))
+        note = f"특송({exp}) 채널로 나가는 소량 출고의 기대 물량. 총 예측치는 특송+화물 전체 기대 물량."
+        col_small = "특송 주간(EA)"; col_small_tot = "특송 4주 합(EA)"
+    else:
+        note = "스파이크(대량주)를 각 고객의 임계값에서 winsorize 후 산출한 정상 수요 기대치. 총 예측치는 대량 포함 기대 물량."
+        col_small = "정상 주간(EA)"; col_small_tot = "정상 4주 합(EA)"
     return f"""
     <div class="card">
-      <h3>소량(정상) 출고 예측치 — 고객별 <span class="muted">향후 {meta.get('horizon_weeks')}주</span></h3>
-      <p class="muted small">스파이크(대량주)를 각 고객의 임계값에서 winsorize 후 산출한 정상 수요 기대치. 총 예측치는 대량 포함 기대 물량.</p>
+      <h3>소량 출고 예측치 — 고객별 <span class="muted">향후 {meta.get('horizon_weeks')}주</span></h3>
+      <p class="muted small">{_esc(note)}</p>
       <div class="scroll"><table>
         <thead><tr>
-          <th>고객</th><th>라벨</th><th class="num">정상 주간(EA)</th>
-          <th class="num">정상 4주 합(EA)</th><th class="num">총 4주 기대(EA)</th>
+          <th>고객</th><th>라벨</th><th class="num">{col_small}</th>
+          <th class="num">{col_small_tot}</th><th class="num">총 4주 기대(EA)</th>
           <th class="num">주간 출고확률</th><th class="num">RMSSE</th>
         </tr></thead><tbody>{''.join(rows)}</tbody></table></div>
     </div>"""
@@ -245,20 +259,49 @@ def _label_pill(label):
     return f'<span class="pill {cls}">{_esc(label)}</span>'
 
 
+def _definition_card(meta):
+    """Explain the 대량/소량 split so the numbers are interpretable."""
+    if meta.get("split_mode") != "channel":
+        return f"""
+    <div class="card">
+      <h3>대량 / 소량 정의 <span class="muted">물량 기준</span></h3>
+      <p class="muted small">각 대상의 비영(非0) 주간 출고량이 상위 {int(100*(1-0.8))}퍼센타일 이상이면 <b>대량</b>,
+        그 외를 <b>소량</b>으로 정의합니다. (config <code>split_mode: quantile</code>)</p>
+    </div>"""
+    exp = " · ".join(meta.get("express_channels", []))
+    vshare = _pct(meta.get("express_vol_share"), 1)
+    cshare = _pct(meta.get("express_cnt_share"), 0)
+    return f"""
+    <div class="card">
+      <h3>대량 / 소량 정의 <span class="muted">출고채널 기준</span></h3>
+      <div class="split">
+        <span class="seg seg-con" style="flex:1">소량 = 특송 &nbsp;({exp})</span>
+        <span class="seg seg-int" style="flex:2">대량 = 비특송 &nbsp;(화물·픽업: TAIUN·TAIUN_AIR·CUSTOMER_PICK_UP 등)</span>
+      </div>
+      <p class="muted small">특송은 <b>주문건수의 {cshare}</b>를 차지하지만 <b>물량은 {vshare}</b>에 불과 — 소포성 소량 출고.
+        대량(비특송)은 소건이지만 물량 대부분을 차지합니다. 따라서 대량은 <b>발생 확률</b>(공간·인력 계획),
+        소량은 <b>기대 물량</b>(특송비·포장 계획)으로 리포팅합니다.</p>
+    </div>"""
+
+
 def build_html(result, cfg: Config) -> str:
     meta = result.meta
+    channel = meta.get("split_mode") == "channel"
+    large_def = ("비특송(화물·픽업) 채널로 나가는 출고를 '대량'으로 정의. 4주 내 최소 1회 대량출고 발생 확률."
+                 if channel else
+                 "각 대상의 비영 주간 출고량 상위 20% 이상을 '대량'으로 정의. 4주 내 최소 1회 대량출고 발생 확률.")
     body = "".join([
         _stat_tiles(meta),
+        _definition_card(meta),
         _label_split(result.classes),
         _large_table(result.large_prob, "sku", "SKU",
-                     "대량 출고 확률 — SKU별",
-                     "각 SKU의 비영(非0) 주간 출고량 상위 20% 이상을 '대량'으로 정의. 4주 내 최소 1회 대량출고 발생 확률."),
+                     "대량 출고 확률 — SKU별", large_def),
         _large_table(result.large_prob, "customer", "고객",
                      "대량 출고 확률 — 고객별",
-                     "고객별 대량출고 발생 확률 (창고 공간·인력 사전계획용)."),
+                     "고객별 대량(비특송) 출고 발생 확률 (창고 공간·인력 사전계획용)."),
         _large_table(result.large_prob, "channel", "출고채널",
-                     "대량 출고 확률 — 출고채널별",
-                     "채널(DHL·TAIUN·FEDEX 등)별 대량출고 발생 확률."),
+                     "대량 출고 확률 — 비특송 채널별",
+                     "비특송(화물·픽업) 채널별 대량출고 발생 확률."),
         _small_table(result.small_forecast, meta),
         _sku_forecast_table(result.forecasts, meta),
         _model_summary(result.forecasts, meta),
