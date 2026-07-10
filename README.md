@@ -25,7 +25,21 @@
 
 ---
 
-## 빠른 실행
+## 웹 UI (파일 업로드 → 실행)
+
+파일을 직접 올려서 실행하고 리포트를 바로 보고 싶다면 Streamlit 앱을 쓰세요.
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+브라우저에서 **출고·입고(및 선택적 재고) CSV를 업로드**하고, 사이드바에서 기준일·예측
+구간·대량 임계 등을 조정한 뒤 **[예측 실행]** 을 누르면 리포트가 화면에 표시되고 모든
+결과를 내려받을 수 있습니다. CP949/UTF-8 인코딩을 자동 처리합니다. 같은 **작업
+디렉터리**로 매주 실행하면 모델 상태(레지스트리)가 유지되어 정확도가 누적 개선(고도화)됩니다.
+
+## CLI 실행 (자동화/배치)
 
 ```bash
 pip install -r requirements.txt
@@ -119,6 +133,7 @@ demand_forecast/
   registry.py        모델·정확도 이력 영속화 (고도화)
   report.py          CSV + HTML 대시보드 생성
   pipeline.py        전체 오케스트레이션
+app.py                 Streamlit 웹 UI (파일 업로드 → 실행 → 리포트)
 scripts/run_weekly.py  주간 실행 CLI
 tests/test_core.py     핵심 로직 단위 테스트
 config.yaml            설정값

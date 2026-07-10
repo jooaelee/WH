@@ -94,10 +94,29 @@ def week_start(dates: pd.Series, anchor: str) -> pd.Series:
     return dates.dt.to_period(anchor).apply(lambda p: p.start_time)
 
 
+def _read_csv(path: str, encoding: str) -> pd.DataFrame:
+    """Read a CSV, trying the configured encoding then common fallbacks.
+
+    Uploaded files may be CP949 (the source export), UTF-8, or Latin-1; try them
+    in turn so the UI works regardless of how the user saved the file.
+    """
+    tried = []
+    for enc in [encoding, "cp949", "utf-8-sig", "utf-8", "latin1"]:
+        if enc in tried:
+            continue
+        tried.append(enc)
+        try:
+            return pd.read_csv(path, encoding=enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    # Last resort: replace undecodable bytes so we never hard-fail on encoding.
+    return pd.read_csv(path, encoding="latin1", encoding_errors="replace")
+
+
 def load(cfg: Config) -> WarehouseData:
     """Read, clean and weekly-index the inputs described by ``cfg``."""
-    raw_out = _strip_cols(pd.read_csv(cfg.outbound_path, encoding=cfg.encoding))
-    raw_in = _strip_cols(pd.read_csv(cfg.inbound_path, encoding=cfg.encoding))
+    raw_out = _strip_cols(_read_csv(cfg.outbound_path, cfg.encoding))
+    raw_in = _strip_cols(_read_csv(cfg.inbound_path, cfg.encoding))
 
     out = raw_out.rename(columns=_OUT_RENAME)
     inb = raw_in.rename(columns=_IN_RENAME)
@@ -156,7 +175,7 @@ def _build_inventory(cfg, inb, out, week_index) -> pd.DataFrame:
     stock). The reconstruction is a signal, not an audited ledger.
     """
     if cfg.inventory_path and Path(cfg.inventory_path).exists():
-        inv = _strip_cols(pd.read_csv(cfg.inventory_path, encoding=cfg.encoding))
+        inv = _strip_cols(_read_csv(cfg.inventory_path, cfg.encoding))
         inv.columns = [c.lower().strip() for c in inv.columns]
         return inv
 
