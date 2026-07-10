@@ -35,13 +35,22 @@ echo Setup complete.
 echo.
 
 :run_app
-REM ---- 3) Run: the browser will open automatically --------------------------
+REM ---- 3) Skip Streamlit's one-time interactive "Email:" prompt -------------
+REM Without this, the very first run on a machine can sit waiting for input
+REM that never comes when launched with a hidden window (see Start.vbs).
+if not exist "%USERPROFILE%\.streamlit" mkdir "%USERPROFILE%\.streamlit" >nul 2>nul
+if not exist "%USERPROFILE%\.streamlit\credentials.toml" (
+    echo [general] > "%USERPROFILE%\.streamlit\credentials.toml"
+    echo email = "" >> "%USERPROFILE%\.streamlit\credentials.toml"
+)
+
+REM ---- 4) Run: the browser will open automatically --------------------------
 echo Starting the program. Your browser will open shortly...
 echo (Keep this black window open while you use the program)
-echo (To stop, close this window or press Ctrl+C)
+echo (To stop, close this window or press Ctrl+C, or use Stop.bat)
 echo.
 
-".venv\Scripts\python.exe" -m streamlit run app.py
+".venv\Scripts\python.exe" -m streamlit run app.py --server.port 8501 --browser.gatherUsageStats false
 
 goto :end
 
