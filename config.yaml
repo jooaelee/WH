@@ -1,0 +1,38 @@
+# Warehouse demand-forecast configuration.
+# Every knob has a sensible default in demand_forecast/config.py; override here.
+
+# ---- inputs -----------------------------------------------------------------
+inbound_path: ESSEN_HK_Inbound.csv       # relative to --data-dir
+outbound_path: ESSEN_HK_Outbound.csv
+inventory_path: null                     # optional; derived if null
+encoding: cp949                          # source files are CP949 (Korean)
+as_of: null                              # YYYY-MM-DD; null = latest date in data
+
+# ---- weekly aggregation & horizon -------------------------------------------
+week_anchor: W-SUN
+horizon_weeks: 4
+demand_out_types: [Sales]                # only genuine customer demand
+
+# ---- forecast-target selection (top 20% volume drivers) ---------------------
+target_volume_quantile: 0.80
+min_history_weeks: 8
+min_active_weeks: 2
+
+# ---- SKU classification (Syntetos-Boylan) -----------------------------------
+adi_cut: 1.32
+cv2_cut: 0.49
+continuous_recent_activity: 0.40         # 지속형 must be active in >=40% of recent weeks
+recent_window_weeks: 52
+
+# ---- large vs small shipment split (relative, per series) -------------------
+large_quantile: 0.80                     # weekly qty >= p80 of own history = 대량
+
+# ---- backtest & tuning ------------------------------------------------------
+backtest_folds: 6
+max_trials: 10                           # ~10 candidate configs per series
+champion_margin: 0.02                    # challenger must beat champion by 2%
+
+# ---- outputs ----------------------------------------------------------------
+output_dir: outputs
+registry_path: outputs/registry.json
+report_html: outputs/report.html
