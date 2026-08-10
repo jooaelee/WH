@@ -102,6 +102,20 @@ python scripts/run_weekly.py --config config.yaml --data-dir /path/to/data --as-
 
 `outputs/sample/` 에 실제 데이터로 실행한 예시 산출물이 포함되어 있습니다.
 
+### 정확도 검증 (out-of-sample holdout)
+
+파이프라인 내부의 RMSSE/MASE는 모델 선택에도 쓰이는 지표라 실제 미래 성능보다 낙관적으로 보일 수
+있습니다. 최근 N주를 가리고 그 이전 데이터만으로 예측한 뒤 실제 값과 비교하는 진짜 out-of-sample
+검증은 다음으로 실행합니다.
+
+```bash
+python scripts/validate_holdout.py --config config.yaml --data-dir /path/to/data --holdout-weeks 4
+```
+
+결과는 `outputs/holdout_validation/accuracy.csv`(RMSSE/sMAPE)와 `large_calibration.csv`(대량출고
+확률 캘리브레이션)로 저장됩니다. `outputs/holdout_validation/`에 실제 데이터 실행 예시가 포함되어
+있습니다 (2,019개 시계열 평가, 나이브 대비 87.7% 우수).
+
 ### 매주 자동 실행 (cron 예시)
 
 ```cron
@@ -177,10 +191,11 @@ demand_forecast/
   registry.py        모델·정확도 이력 영속화 (고도화)
   report.py          CSV + HTML 대시보드 생성
   pipeline.py        전체 오케스트레이션
-app.py                 Streamlit 웹 UI (파일 업로드 → 실행 → 리포트)
-scripts/run_weekly.py  주간 실행 CLI
-tests/test_core.py     핵심 로직 단위 테스트
-config.yaml            설정값
+app.py                       Streamlit 웹 UI (파일 업로드 → 실행 → 리포트)
+scripts/run_weekly.py        주간 실행 CLI
+scripts/validate_holdout.py  Out-of-sample 정확도 검증 (홀드아웃)
+tests/test_core.py           핵심 로직 단위 테스트
+config.yaml                  설정값
 ```
 
 ## 테스트
